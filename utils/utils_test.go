@@ -2,27 +2,26 @@ package utils
 
 import (
 	"fmt"
-	"github.com/ethereum/go-ethereum/common"
 	"testing"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/crypto"
-	"github.com/cosmos/cosmos-sdk/crypto/keyring"
-	cryptocodec "github.com/cosmos/evm/crypto/codec"
-	"github.com/cosmos/evm/crypto/hd"
-	"github.com/cosmos/evm/types"
-
-	"github.com/stretchr/testify/require"
-
 	sdkhd "github.com/cosmos/cosmos-sdk/crypto/hd"
-	"github.com/cosmos/evm/crypto/ethsecp256k1"
-
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/multisig"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	cryptocodec "github.com/cosmos/evm/crypto/codec"
+	"github.com/cosmos/evm/crypto/hd"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/stretchr/testify/require"
+
+	"github.com/cosmos/evm/crypto/ethsecp256k1"
+	"github.com/cosmos/evm/types"
 )
 
 func TestIsSupportedKeys(t *testing.T) {
@@ -342,6 +341,7 @@ func TestAccountEquivalence(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// create a keyring with support for ethsecp
 			kb, err := keyring.New("keybasename", keyring.BackendMemory, t.TempDir(), nil, cdc, hd.EthSecp256k1Option())
+			require.NoError(t, err)
 
 			// get the proper signing algorithm
 			keyringAlgos, _ := kb.SupportedAlgorithms()
