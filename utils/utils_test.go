@@ -2,10 +2,20 @@ package utils
 
 import (
 	"fmt"
+	"github.com/ethereum/go-ethereum/common"
 	"testing"
+
+	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	"github.com/cosmos/cosmos-sdk/crypto"
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	cryptocodec "github.com/cosmos/evm/crypto/codec"
+	"github.com/cosmos/evm/crypto/hd"
+	"github.com/cosmos/evm/types"
 
 	"github.com/stretchr/testify/require"
 
+	sdkhd "github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/evm/crypto/ethsecp256k1"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
@@ -288,6 +298,133 @@ func TestGetIBCDenomAddress(t *testing.T) {
 				require.NoError(t, err, "expected no error while get ibc denom address")
 				require.Equal(t, address.Hex(), tc.expectedRes)
 			}
+		})
+	}
+}
+
+func init() {
+	crypto.BcryptSecurityParameter = 1
+}
+
+func getCodec() codec.Codec {
+	registry := codectypes.NewInterfaceRegistry()
+	cryptocodec.RegisterInterfaces(registry)
+	return codec.NewProtoCodec(registry)
+}
+
+// TestAccountEquivalence tests and demonstrates the equivalence of accounts
+func TestAccountEquivalence(t *testing.T) {
+	cdc := getCodec()
+
+	tests := []struct {
+		name             string
+		uid              string
+		bip39Passphrease string
+		cosmosHDPath     string
+		evmHDPath        string
+		algoStrEVM       string
+		legacyAlgo       string
+		mnemonic         string
+		expectedErr      error
+	}{
+		{
+			name:             "correct in memory mnemonic",
+			uid:              "inMemory",
+			cosmosHDPath:     sdk.FullFundraiserPath,
+			evmHDPath:        types.BIP44HDPath,
+			bip39Passphrease: "",
+			algoStrEVM:       string(hd.EthSecp256k1Type),
+			legacyAlgo:       string(sdkhd.Secp256k1Type),
+			mnemonic:         "aunt imitate maximum student guard unhappy guard rotate marine panel negative merit record priority zoo voice mixture boost describe fruit often occur expect teach",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// create a keyring with support for ethsecp
+			kb, err := keyring.New("keybasename", keyring.BackendMemory, t.TempDir(), nil, cdc, hd.EthSecp256k1Option())
+
+			// get the proper signing algorithm
+			keyringAlgos, _ := kb.SupportedAlgorithms()
+			algoEvm, err := keyring.NewSigningAlgoFromString(tt.algoStrEVM, keyringAlgos)
+			require.NoError(t, err)
+			legacyAlgo, err := keyring.NewSigningAlgoFromString(tt.legacyAlgo, keyringAlgos)
+			require.NoError(t, err)
+
+			legacyCosmosKey, err := kb.NewAccount(tt.uid, tt.mnemonic, keyring.DefaultBIP39Passphrase, tt.cosmosHDPath, legacyAlgo)
+			require.NoError(t, err)
+
+			cosmsosKey, err := kb.NewAccount(tt.uid, tt.mnemonic, keyring.DefaultBIP39Passphrase, tt.cosmosHDPath, algoEvm)
+			require.NoError(t, err)
+
+			require.NotEqual(t, legacyCosmosKey, cosmsosKey)
+			require.NotEqual(t, legacyCosmosKey.String(), cosmsosKey.String())
+			require.NotEqual(t, legacyCosmosKey.PubKey.String(), cosmsosKey.PubKey.String())
+
+			// calls:
+			// sha := sha256.Sum256(pubKey.Key)
+			// hasherRIPEMD160 := ripemd160.New()
+			// hasherRIPEMD160.Write(sha[:])
+			//
+			// one way sha256 -> ripeMD160
+			// this is the actual bech32 algorithm
+			legacyAddress, err := legacyCosmosKey.GetAddress() //
+			require.NoError(t, err)
+
+			// calls:
+			// 	pubBytes := FromECDSAPub(&p)
+			//	return common.BytesToAddress(Keccak256(pubBytes[1:])[12:])
+			//
+			// one way keccak hash
+			// because the key implementation points to it to call the EVM methods
+			cosmosAddress, err := cosmsosKey.GetAddress() //
+			require.NoError(t, err)
+
+			require.NotEqual(t, legacyAddress, cosmosAddress)
+			require.False(t, legacyAddress.Equals(cosmosAddress))
+
+			fmt.Println(legacyAddress, cosmosAddress)
+
+			evmKey, err := kb.NewAccount(tt.uid, tt.mnemonic, keyring.DefaultBIP39Passphrase, tt.evmHDPath, algoEvm)
+			require.NoError(t, err)
+
+			require.NotEqual(t, cosmsosKey, evmKey)
+			require.NotEqual(t, cosmsosKey.String(), evmKey.String())
+			require.NotEqual(t, cosmsosKey.PubKey.String(), evmKey.PubKey.String())
+
+			// calls:
+			// 	pubBytes := FromECDSAPub(&p)
+			//	return common.BytesToAddress(Keccak256(pubBytes[1:])[12:])
+			//
+			// one way keccak hash
+			evmAddress, err := evmKey.GetAddress()
+			require.NoError(t, err)
+			require.NotEqual(t, cosmosAddress, evmAddress)
+			require.False(t, cosmosAddress.Equals(evmAddress))
+
+			fmt.Println(cosmosAddress, evmAddress)
+
+			// we have verified that two privkeys generated from the same mnemonic (on different HD paths) are different
+			// now, let's derive the 0x and bech32 addresses of our EVM key
+
+			addr := evmAddress
+			require.NoError(t, err)
+			_, err = kb.KeyByAddress(addr)
+			require.NoError(t, err)
+
+			bech32 := addr.String()
+			// Decode from hex to bytes
+
+			// Convert to Ethereum address
+			address := common.BytesToAddress(addr)
+
+			// Print checksummed Ethereum address
+			fmt.Println("\nEthereum address:", address.Hex())
+			fmt.Println("Bech32 address:", bech32)
+
+			require.Equal(t, bech32, Bech32StringFromHexAddress(address.Hex()))
+			gotAddr, err := HexAddressFromBech32String(bech32)
+			require.NoError(t, err)
+			require.Equal(t, address.Hex(), gotAddr.Hex())
 		})
 	}
 }
