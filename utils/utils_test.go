@@ -383,7 +383,7 @@ func TestAccountEquivalence(t *testing.T) {
 	// this just converts the ripeMD(sha(pubkey)) from bech32 formatting style to hex
 	gotHexLegacy, err := HexAddressFromBech32String(legacyBech32Address)
 	require.NoError(t, err)
-	require.NotEqual(t, trueHexLegacy, gotHexLegacy)
+	require.NotEqual(t, trueHexLegacy.Hex(), gotHexLegacy.Hex())
 
 	fmt.Println("\nLegacy Ethereum address:\t\t", gotHexLegacy.Hex()) //
 	fmt.Println("True Legacy Ethereum address:\t", trueHexLegacy.Hex())
